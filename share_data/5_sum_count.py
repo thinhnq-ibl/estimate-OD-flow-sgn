@@ -2,7 +2,7 @@ import pandas as pd
 
 # 1. Load the dataset
 # Replace 'your_file.csv' with the actual path to your file
-df = pd.read_csv('../share_data/bias_correct_data_seoul_pcm_2021.csv')
+df = pd.read_csv('../map/data_sgp_pcm_trip.csv')
 
 # 2. Group by Origin and Destination subzones
 # We also include the X/Y coordinates in the grouping so they aren't lost, 
