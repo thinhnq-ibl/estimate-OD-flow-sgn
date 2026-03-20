@@ -3,7 +3,7 @@ import pandas as pd
 
 # 1. Load and Project
 gdf = gpd.read_file('final_summed_out_cells.geojson').reset_index()
-gdf = gdf.to_crs(epsg=5179) 
+gdf = gdf.to_crs(epsg=3414) # Changed from Korea (5179) to Singapore SVY21 (3414)
 
 # 2. Define thresholds
 threshold_near = 10000  # 1km

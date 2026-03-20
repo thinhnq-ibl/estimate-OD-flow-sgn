@@ -23,14 +23,22 @@ def get_geometry2():
 
     # 1. Load the original Vietnam district-level file
     vnm_city = gpd.read_file("../map/sub_zone/data_sgp_subzone.shp")
-    print(vnm_city.columns)
+    print(vnm_city)
+    # fig, ax = plt.subplots(figsize=(7, 7))
+    # vnm_city.plot(ax=ax, facecolor='none', edgecolor='red', linewidth=2)
+    # ax.set_title(f"Seoul Boundary")
+    # plt.show()
     return vnm_city
 
 def get_geometry3():
 
     # 1. Load the original Vietnam district-level file
     vnm_city = gpd.read_file("../map/gadm41_SGP_shp/gadm41_SGP_1.shp")
-    print(vnm_city)
+    # print(vnm_city.columns)
+    # fig, ax = plt.subplots(figsize=(7, 7))
+    # vnm_city.plot(ax=ax, facecolor='none', edgecolor='red', linewidth=2)
+    # ax.set_title(f"Seoul Boundary")
+    # plt.show()
     return vnm_city
 
 get_geometry()

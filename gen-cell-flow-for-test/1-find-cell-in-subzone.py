@@ -8,7 +8,7 @@ grid = gpd.read_file('../share_data/detail_pois.geojson')
 results_list = []
 
 # Use a projected CRS for accurate area calculations (meters)
-PROJECTED_EPSG = 5179
+PROJECTED_EPSG = 3414
 
 # Pre-project grid to metric CRS once
 grid_metric = grid.to_crs(epsg=PROJECTED_EPSG)

@@ -18,7 +18,7 @@ import os
 base_dir = os.path.abspath(os.path.dirname(__file__))
 
 # Read as CSV (not GeoDataFrame) and ensure numeric columns
-gpd_real_path = os.path.join(base_dir, "..", "gen-cell-follow-for-test", "normalized_real_flow.csv")
+gpd_real_path = os.path.join(base_dir, "..", "gen-cell-flow-for-test", "normalized_real_flow.csv")
 gpd_simulate_path = os.path.join(base_dir, "..", "gen-OD-flow", "normalized_gen_flow.csv")
 
 # use pandas to read
@@ -34,37 +34,37 @@ gpd_simulate = pd.read_csv(gpd_simulate_path)
 gpd_real['norm_total_in'] = pd.to_numeric(gpd_real['norm_total_in'], errors='coerce').fillna(0)
 gpd_simulate['norm_total_in'] = pd.to_numeric(gpd_simulate['norm_total_in'], errors='coerce').fillna(0)
 
-def fast_cpc(df_obs, df_pred):
-    """
-    High-performance CPC calculation for large datasets.
-    """
-    # Ensure in_amount columns are numeric
-    df_obs = df_obs.copy()
-    df_pred = df_pred.copy()
-    df_obs['norm_total_in'] = pd.to_numeric(df_obs['norm_total_in'], errors='coerce')
-    df_pred['norm_total_in'] = pd.to_numeric(df_pred['norm_total_in'], errors='coerce')
+# def fast_cpc(df_obs, df_pred):
+#     """
+#     High-performance CPC calculation for large datasets.
+#     """
+#     # Ensure in_amount columns are numeric
+#     df_obs = df_obs.copy()
+#     df_pred = df_pred.copy()
+#     df_obs['norm_total_in'] = pd.to_numeric(df_obs['norm_total_in'], errors='coerce')
+#     df_pred['norm_total_in'] = pd.to_numeric(df_pred['norm_total_in'], errors='coerce')
 
-    # 1. Use an inner merge to find the intersection of flows
-    merged = pd.merge(
-        df_obs[['cell_id', 'neighbor_id', 'norm_total_in']], 
-        df_pred[['cell_id', 'neighbor_id', 'norm_total_in']], 
-        on=['cell_id', 'neighbor_id'], 
-        suffixes=('_obs', '_pred')
-    )
-    # 2. Convert columns to NumPy arrays (zero-copy view if possible)
-    obs_flows = merged['norm_total_in_obs'].values.astype(float)
-    pred_flows = merged['norm_total_in_pred'].values.astype(float)
+#     # 1. Use an inner merge to find the intersection of flows
+#     merged = pd.merge(
+#         df_obs[['cell_id', 'neighbor_id', 'norm_total_in']], 
+#         df_pred[['cell_id', 'neighbor_id', 'norm_total_in']], 
+#         on=['cell_id', 'neighbor_id'], 
+#         suffixes=('_obs', '_pred')
+#     )
+#     # 2. Convert columns to NumPy arrays (zero-copy view if possible)
+#     obs_flows = merged['norm_total_in_obs'].values.astype(float)
+#     pred_flows = merged['norm_total_in_pred'].values.astype(float)
 
-    # 3. Vectorized minimum and sums
-    intersection_sum = np.minimum(obs_flows, pred_flows).sum()
+#     # 3. Vectorized minimum and sums
+#     intersection_sum = np.minimum(obs_flows, pred_flows).sum()
 
-    # Calculate totals from the original dataframes to account for flows that might exist in one but not the other
-    total_obs = df_obs['norm_total_in'].sum()
-    total_pred = df_pred['norm_total_in'].sum()
+#     # Calculate totals from the original dataframes to account for flows that might exist in one but not the other
+#     total_obs = df_obs['norm_total_in'].sum()
+#     total_pred = df_pred['norm_total_in'].sum()
 
-    # 4. Final CPC ratio
-    cpc = (2.0 * intersection_sum) / (total_obs + total_pred) if (total_obs + total_pred) != 0 else 0.0
-    return cpc
+#     # 4. Final CPC ratio
+#     cpc = (2.0 * intersection_sum) / (total_obs + total_pred) if (total_obs + total_pred) != 0 else 0.0
+#     return cpc
 
 def evaluate_model(df_obs, df_pred, model_name):
     """
@@ -74,6 +74,10 @@ def evaluate_model(df_obs, df_pred, model_name):
     # Ensure numeric types
     df_obs['norm_total_in'] = pd.to_numeric(df_obs['norm_total_in'], errors='coerce').fillna(0)
     df_pred['norm_total_in'] = pd.to_numeric(df_pred['norm_total_in'], errors='coerce').fillna(0)
+
+    # Aggregate duplicates by grouping cell_id and neighbor_id strictly to prevent cartesian explosion
+    df_obs = df_obs.groupby(['cell_id', 'neighbor_id'], as_index=False)['norm_total_in'].sum()
+    df_pred = df_pred.groupby(['cell_id', 'neighbor_id'], as_index=False)['norm_total_in'].sum()
 
     # Outer merge to align the 95,000 cell pairs correctly
     merged = pd.merge(
@@ -102,6 +106,10 @@ def evaluate_model(df_obs, df_pred, model_name):
     # compute CPC directly from the aligned arrays to avoid mismatched signatures
     intersection = np.minimum(y_true, y_pred).sum()
     cpc = (2.0 * intersection) / (total_obs + total_pred) if (total_obs + total_pred) != 0 else 0.0
+    
+    merged['error'] = abs(merged['norm_total_in_obs'] - merged['norm_total_in_pred'])
+    print("Top 10 cặp dự đoán lệch nặng nhất:")
+    print(merged.sort_values('error', ascending=False).head(10))
     
     return {"Model": model_name, "R2": r2, "RMSE": rmse, "CPC": cpc}, y_true, y_pred
 # Example Usage:
