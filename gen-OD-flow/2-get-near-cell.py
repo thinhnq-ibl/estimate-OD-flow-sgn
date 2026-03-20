@@ -6,9 +6,9 @@ gdf = gpd.read_file('final_summed_out_cells.geojson').reset_index()
 gdf = gdf.to_crs(epsg=3414) # Changed from Korea (5179) to Singapore SVY21 (3414)
 
 # 2. Define thresholds
-threshold_near = 10000  # 1km
-threshold_far = 10 * 10000  # 10km
-threshold_over = 20 * 10000   # 20km
+threshold_near = 650 - 650/2  # 1km
+threshold_far = 10 * 650 - 650/2  # 10km
+threshold_over = 30 * 650 - 650/2   # 20km
 
 # 3. Create a buffer for the maximum search area (10km)
 # We keep 'cell_id' in this copy so it's available after the join

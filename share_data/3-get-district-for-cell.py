@@ -41,11 +41,12 @@ print(f"Updated districts. Sample: {cell_gdf['district'].head()}")
 
 # Drop the centroid column as it's not needed for saving
 cell_gdf = cell_gdf.drop(columns=['centroid'])
+cell_gdf = cell_gdf[cell_gdf['district'].notna()]
 
 # Reset index if needed for saving
 cell_gdf.reset_index(inplace=True)
 
-# Save the updated GeoJSON
+# Save the updated GeoJSON  
 print("Saving file...")
 try:
     cell_gdf.to_file(geojson_file, driver='GeoJSON')

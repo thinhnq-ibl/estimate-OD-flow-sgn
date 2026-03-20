@@ -111,6 +111,25 @@ def evaluate_model(df_obs, df_pred, model_name):
     print("Top 10 cặp dự đoán lệch nặng nhất:")
     print(merged.sort_values('error', ascending=False).head(10))
     
+    try:
+        pair_df = pd.read_csv(os.path.join(base_dir, "..", "gen-OD-flow", "categorized_cell_pairs.csv"), usecols=['cell_id', 'neighbor_id', 'category', 'distance_m'])
+        merged_dist = merged.merge(pair_df[['cell_id', 'neighbor_id', 'category']], on=['cell_id', 'neighbor_id'], how='left')
+        print("\n\n--- PHÂN TÍCH SAI LỆCH THEO VÀNH ĐAI KHOẢNG CÁCH (CATEGORY) ---")
+        stats = []
+        for cat, group in merged_dist.groupby('category'):
+            mae = group['error'].mean()
+            sum_err = group['error'].sum()
+            obs_sum = group['norm_total_in_obs'].sum()
+            pred_sum = group['norm_total_in_pred'].sum()
+            cpc_cat = 2 * group[['norm_total_in_obs', 'norm_total_in_pred']].min(axis=1).sum() / (obs_sum + pred_sum) if (obs_sum + pred_sum) > 0 else 0
+            stats.append({'Category': cat, 'Count': len(group), 'MAE (Error TB)': mae, 'Tổng Error': sum_err, 'Tổng Obs': obs_sum, 'Tổng Pred': pred_sum, 'Nội bộ CPC': cpc_cat})
+        
+        stats_df = pd.DataFrame(stats).sort_values('Category')
+        print(stats_df.to_string(index=False))
+        print("\n")
+    except Exception as e:
+        print("Không thể phân tích theo khoảng cách:", e)
+
     return {"Model": model_name, "R2": r2, "RMSE": rmse, "CPC": cpc}, y_true, y_pred
 # Example Usage:
 
