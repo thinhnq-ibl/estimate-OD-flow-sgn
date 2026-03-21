@@ -16,10 +16,14 @@ print("Preparing POI-based weights...")
 # This matches real-world concentration and aligns with the engine's Radiation model expectations!
 
 poi_cols = ['tourism', 'office', 'shop', 'amenity', 'public_transport']
-mass = 1.0 # 1.0 laplace smoothing so empty cells aren't strictly 0
+mass = 0 #
 for col in poi_cols:
     if col in all_cell.columns:
         mass += pd.to_numeric(all_cell[col], errors='coerce').fillna(0)
+
+if 'pop_count' in all_cell.columns:
+    pop = pd.to_numeric(all_cell['pop_count'], errors='coerce').fillna(0)
+    mass += np.log1p(pop)
 
 all_cell['mass'] = mass
 subzone_mass = all_cell.groupby('SUBZONE_C')['mass'].transform('sum')
