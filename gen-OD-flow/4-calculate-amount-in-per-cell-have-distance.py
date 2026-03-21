@@ -10,10 +10,9 @@ out_data = gpd.read_file(geojson_file2)
 # Ensure 'in_prob' column exists
 pair_cell_gdf['in_amount'] = 0.0
 
-# Extract the first cell_id as a scalar value (not a Series)
-for index, row in pair_cell_gdf.iterrows():
-    pois_data = out_data[out_data["cell_id"] == row["cell_id"]].iloc[0]
-    pair_cell_gdf.at[index, "in_amount"] = float(pois_data["in_amount"]) * float(row["in_prob"])
+# Extract the first cell_id as a scalar value (not a Series) FAST VECTORIZATION
+out_amount_dict = out_data.set_index('cell_id')['in_amount'].astype(float).to_dict()
+pair_cell_gdf['in_amount'] = pair_cell_gdf['cell_id'].map(out_amount_dict) * pair_cell_gdf['in_prob'].astype(float)
 
 pair_cell_gdf = pair_cell_gdf.groupby(['cell_id', 'neighbor_id'], as_index=False)['in_amount'].sum()
 pair_cell_gdf.to_csv(csv_file, index=False)

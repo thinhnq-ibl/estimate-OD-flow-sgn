@@ -1,6 +1,6 @@
 import geopandas as gpd
 import pandas as pd
-gdf = gpd.read_file('../share_data/detail_pois.geojson').reset_index()
+gdf = gpd.read_file('../subzone-cell/final_pois_2.geojson').reset_index()
 out_data = pd.read_csv('../gen-cell-flow-for-test/only_cell_out.csv')
 
 # find the cell_id in out_data and write in_amount to gdf

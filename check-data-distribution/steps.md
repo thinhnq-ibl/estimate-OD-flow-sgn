@@ -1,0 +1,3 @@
+## Bước 1: Dùng tọa độ (lat-o, lon-o) và (lat-d, lon-d) trong tập ground truth để tính khoảng cách Haversine cho mỗi cặp OD.
+## Bước 2: Phân loại các khoảng cách này vào đúng 4 bins của Facebook: <1km, 1-10km, 10-100km, >100km.
+## Bước 3: Tính tổng count trong mỗi bin và chuẩn hóa thành xác suất $P(d)_{ground\_truth}$.Bước 4: Dùng các độ đo như Kullback-Leibler (KL) Divergence hoặc Jensen-Shannon (JS) Divergence để so sánh $P(d)_{ground\_truth}$ với $P(d)_{facebook}$. Nếu độ lệch lớn, bạn sẽ biết tập ground truth của mình đang over-represent (đại diện quá mức) hay under-represent (đại diện dưới mức) ở cự ly nào.

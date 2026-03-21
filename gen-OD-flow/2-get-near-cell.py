@@ -1,25 +1,28 @@
 import geopandas as gpd
 import pandas as pd
+import numpy as np
 
 # 1. Load and Project
 gdf = gpd.read_file('final_summed_out_cells.geojson').reset_index()
 gdf = gdf.to_crs(epsg=3414) # Changed from Korea (5179) to Singapore SVY21 (3414)
 
-# 2. Define thresholds
-threshold_near = 650 - 650/2  # 1km
-threshold_far = 10 * 650 - 650/2  # 10km
-threshold_over = 30 * 650 - 650/2   # 20km
+R = 6371.0 # Earth radius in km
+
+# 2. Define thresholds in meters
+threshold_near = 1000  # 1km
+threshold_far = 10000  # 10km
+threshold_over = 20000   # 20km
 
 # 3. Create a buffer for the maximum search area (10km)
 # We keep 'cell_id' in this copy so it's available after the join
 gdf_buffered = gdf[['cell_id', 'geometry']].copy()
 
-# 6. Calculate exact distance to categorize
+# 6. Calculate exact Euclidean distance in meters to categorize
 def calculate_distance(row, row2):
     # Lookup the original geometries using the cell_ids
     geom_a = row.geometry 
     geom_b = row2.geometry
-    return geom_a.distance(geom_b)
+    return geom_a.centroid.distance(geom_b.centroid)
 
 result = []
 
