@@ -10,20 +10,30 @@ base_dir = os.path.dirname(os.path.abspath(__file__))
 out_data = gpd.read_file(os.path.join(base_dir, "final_summed_out_cells.geojson"))
 pair_cell_gdf = pd.read_csv(os.path.join(base_dir, "categorized_cell_pairs.csv"))
 
-def calculate_mass(row):
-    # Apply further adjusted weights: tourism(0.2), office(1.8), shop(1.4), amenity(0.4), public_transport(2.5)
-    poi_sum = (0.2 * float(row.get("tourism", 0)) + 
-               1.8 * float(row.get("office", 0)) + 
-               1.4 * float(row.get("shop", 0)) + 
-               0.4 * float(row.get("amenity", 0)) + 
-               2.5 * float(row.get("public_transport", 0)))
-    pop_count = float(row.get("pop_count", 0))
-    # Sử dụng log1p (log cơ số tự nhiên cộng 1) để pop_count không chiếm ưu thế, nhưng vẫn tạo trọng số khi poi_sum = 0
-    return poi_sum + math.log1p(pop_count) # +1.0 laplace smoothing matching ground truth
+# Distance-sensitive POI weights
+under_1km_weights = {'tourism': 0.5, 'office': 1.0, 'shop': 2.0, 'amenity': 1.5, 'public_transport': 3.0}
+km_1_10_weights = {'tourism': 1.0, 'office': 2.0, 'shop': 1.5, 'amenity': 1.0, 'public_transport': 1.5}
+km_10_100_weights = {'tourism': 2.0, 'office': 1.5, 'shop': 1.0, 'amenity': 0.5, 'public_transport': 1.0}
 
-# Add mass to out_data and create a fast lookup
-out_data['mass'] = out_data.apply(calculate_mass, axis=1)
-poi_lookup = out_data.set_index('cell_id')['mass'].to_dict()
+def calculate_mass(row):
+    def compute_poi_sum(weights):
+        return (weights['tourism'] * float(row.get("tourism", 0)) + 
+                weights['office'] * float(row.get("office", 0)) + 
+                weights['shop'] * float(row.get("shop", 0)) + 
+                weights['amenity'] * float(row.get("amenity", 0)) + 
+                weights['public_transport'] * float(row.get("public_transport", 0)))
+    
+    pop_count = float(row.get("pop_count", 0))
+    base_mass = math.log1p(pop_count)
+    
+    return {
+        'under_1km': compute_poi_sum(under_1km_weights) + base_mass,
+        '1km-10km': compute_poi_sum(km_1_10_weights) + base_mass,
+        '10km-100km': compute_poi_sum(km_10_100_weights) + base_mass
+    }
+
+# Create lookup dict of dicts
+poi_lookup = {row['cell_id']: calculate_mass(row) for _, row in out_data.iterrows()}
 
 prob_data = pd.read_csv(os.path.join(base_dir, "../check-data-distribution/gt_prob.csv"))
 
@@ -49,7 +59,7 @@ for _, row in out_data.iterrows():
 
 
 # Precompute neighbor masses globally for extreme speed 
-pair_cell_gdf['neighbor_mass'] = pair_cell_gdf['neighbor_id'].map(poi_lookup).fillna(0)
+pair_cell_gdf['neighbor_mass'] = pair_cell_gdf.apply(lambda r: poi_lookup.get(r['neighbor_id'], {}).get(r['category'], 0), axis=1)
 
 # radiation formula helper (xi will be bound later)
 def compute_radiation(xi, xj, sij):
@@ -63,7 +73,7 @@ print("Running fast radiation model O(N)...")
 for index, row in out_data.iterrows():
     cell_id = row["cell_id"]
     
-    xi = poi_lookup.get(cell_id, 0)
+    # xi will be set per category
     
     # Skip if cell missing probabilities
     if cell_id not in prob_lookup:
@@ -86,12 +96,12 @@ for index, row in out_data.iterrows():
     ring_mass = cell_neighbors.groupby('distance_m')['neighbor_mass'].sum().cumsum().shift(fill_value=0)
     cell_neighbors['s_ij'] = cell_neighbors['distance_m'].map(ring_mass)
     
-    # Calculate pre-normalized radiation attraction A_ij for all neighbors
-    cell_neighbors['raw_Aij'] = cell_neighbors.apply(lambda rw: compute_radiation(xi, rw['neighbor_mass'], rw['s_ij']), axis=1)
-    
     # Filter for under_1km category
     under_1km = cell_neighbors[cell_neighbors['category'] == "under_1km"]
     if not under_1km.empty:
+        xi = poi_lookup[cell_id]['under_1km']
+        under_1km = under_1km.copy()
+        under_1km['raw_Aij'] = under_1km.apply(lambda rw: compute_radiation(xi, rw['neighbor_mass'], rw['s_ij']), axis=1)
         sum_Aij = under_1km['raw_Aij'].sum()
         if sum_Aij > 0:
             for ix, rw in under_1km.iterrows():
@@ -106,6 +116,9 @@ for index, row in out_data.iterrows():
     # Filter for 1km-10km category
     group_1km_10km = cell_neighbors[cell_neighbors['category'] == "1km-10km"]
     if not group_1km_10km.empty: 
+        xi = poi_lookup[cell_id]['1km-10km']
+        group_1km_10km = group_1km_10km.copy()
+        group_1km_10km['raw_Aij'] = group_1km_10km.apply(lambda rw: compute_radiation(xi, rw['neighbor_mass'], rw['s_ij']), axis=1)
         sum_Aij = group_1km_10km['raw_Aij'].sum()
         if sum_Aij > 0:
             for ix, rw in group_1km_10km.iterrows():
@@ -115,6 +128,9 @@ for index, row in out_data.iterrows():
     # Filter for 10km-100km category
     group_over_10km = cell_neighbors[(cell_neighbors['category'] == "10km-100km") & (cell_neighbors['neighbor_id'] != cell_id)]
     if not group_over_10km.empty:
+        xi = poi_lookup[cell_id]['10km-100km']
+        group_over_10km = group_over_10km.copy()
+        group_over_10km['raw_Aij'] = group_over_10km.apply(lambda rw: compute_radiation(xi, rw['neighbor_mass'], rw['s_ij']), axis=1)
         sum_Aij = group_over_10km['raw_Aij'].sum()
         if sum_Aij > 0:
             for ix, rw in group_over_10km.iterrows():
