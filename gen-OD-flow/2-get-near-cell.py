@@ -11,7 +11,7 @@ R = 6371.0 # Earth radius in km
 # 2. Define thresholds in meters
 threshold_near = 1000  # 1km
 threshold_far = 10000  # 10km
-threshold_over = 20000   # 20km
+threshold_over = 100000   # 100km
 
 # 3. Create a buffer for the maximum search area (10km)
 # We keep 'cell_id' in this copy so it's available after the join
@@ -41,11 +41,11 @@ for index, row in gdf.iterrows():
 result_df = pd.DataFrame(result)
 # 7. Categorize
 result_df['category'] = 'too-far'
-result_df.loc[result_df['distance_m'] <= threshold_over, 'category'] = '10km-20km'
+result_df.loc[result_df['distance_m'] <= threshold_over, 'category'] = '10km-100km'
 result_df.loc[result_df['distance_m'] <= threshold_far, 'category'] = '1km-10km'
 result_df.loc[result_df['distance_m'] <= threshold_near, 'category'] = 'under_1km'
 
-result_df = result_df[(result_df['category'] == '10km-20km') | (result_df['category'] == '1km-10km') | (result_df['category'] == 'under_1km')]
+result_df = result_df[(result_df['category'] == '10km-100km') | (result_df['category'] == '1km-10km') | (result_df['category'] == 'under_1km')]
 
 result_df.to_csv("categorized_cell_pairs.csv")
 

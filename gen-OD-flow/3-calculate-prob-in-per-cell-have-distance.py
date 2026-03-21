@@ -101,8 +101,8 @@ for index, row in out_data.iterrows():
                 prob = (rw['raw_Aij'] / sum_Aij) * p10
                 final_probs.append([cell_id, rw["neighbor_id"], prob])
                 
-    # Filter for 10km-20km category
-    group_over_10km = cell_neighbors[(cell_neighbors['category'] == "10km-20km") & (cell_neighbors['neighbor_id'] != cell_id)]
+    # Filter for 10km-100km category
+    group_over_10km = cell_neighbors[(cell_neighbors['category'] == "10km-100km") & (cell_neighbors['neighbor_id'] != cell_id)]
     if not group_over_10km.empty:
         sum_Aij = group_over_10km['raw_Aij'].sum()
         if sum_Aij > 0:
