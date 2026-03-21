@@ -12,9 +12,9 @@ pair_cell_gdf = pd.read_csv(os.path.join(base_dir, "categorized_cell_pairs.csv")
 
 def calculate_mass(row):
     poi_sum = float(row.get("tourism", 0)) + float(row.get("office", 0)) + float(row.get("shop", 0)) + float(row.get("amenity", 0)) + float(row.get("public_transport", 0))
-    # pop_count = float(row.get("pop_count", 0))
+    pop_count = float(row.get("pop_count", 0))
     # Sử dụng log1p (log cơ số tự nhiên cộng 1) để pop_count không chiếm ưu thế, nhưng vẫn tạo trọng số khi poi_sum = 0
-    return poi_sum  
+    return poi_sum + math.log1p(pop_count) # +1.0 laplace smoothing matching ground truth
 
 # Add mass to out_data and create a fast lookup
 out_data['mass'] = out_data.apply(calculate_mass, axis=1)
