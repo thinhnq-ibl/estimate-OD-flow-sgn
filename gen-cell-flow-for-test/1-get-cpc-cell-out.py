@@ -16,10 +16,13 @@ print("Preparing POI-based weights...")
 # This matches real-world concentration and aligns with the engine's Radiation model expectations!
 
 poi_cols = ['tourism', 'office', 'shop', 'amenity', 'public_transport']
-mass = 0 #
+# Use weighted POI sum consistent with OD model (using 1km-10km weights as baseline for ground truth)
+poi_weights = {'tourism': 1.0, 'office': 2.0, 'shop': 1.5, 'amenity': 1.0, 'public_transport': 1.5}
+mass = 0
 for col in poi_cols:
     if col in all_cell.columns:
-        mass += pd.to_numeric(all_cell[col], errors='coerce').fillna(0)
+        weight = poi_weights.get(col, 1.0)  # default to 1.0 if not specified
+        mass += weight * pd.to_numeric(all_cell[col], errors='coerce').fillna(0)
 
 if 'pop_count' in all_cell.columns:
     pop = pd.to_numeric(all_cell['pop_count'], errors='coerce').fillna(0)
