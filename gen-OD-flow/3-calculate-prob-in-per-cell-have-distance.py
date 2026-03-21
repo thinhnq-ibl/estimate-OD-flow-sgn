@@ -11,7 +11,12 @@ out_data = gpd.read_file(os.path.join(base_dir, "final_summed_out_cells.geojson"
 pair_cell_gdf = pd.read_csv(os.path.join(base_dir, "categorized_cell_pairs.csv"))
 
 def calculate_mass(row):
-    poi_sum = float(row.get("tourism", 0)) + float(row.get("office", 0)) + float(row.get("shop", 0)) + float(row.get("amenity", 0)) + float(row.get("public_transport", 0))
+    # Apply further adjusted weights: tourism(0.2), office(1.8), shop(1.4), amenity(0.4), public_transport(2.5)
+    poi_sum = (0.2 * float(row.get("tourism", 0)) + 
+               1.8 * float(row.get("office", 0)) + 
+               1.4 * float(row.get("shop", 0)) + 
+               0.4 * float(row.get("amenity", 0)) + 
+               2.5 * float(row.get("public_transport", 0)))
     pop_count = float(row.get("pop_count", 0))
     # Sử dụng log1p (log cơ số tự nhiên cộng 1) để pop_count không chiếm ưu thế, nhưng vẫn tạo trọng số khi poi_sum = 0
     return poi_sum + math.log1p(pop_count) # +1.0 laplace smoothing matching ground truth
