@@ -11,14 +11,22 @@ trips = pd.read_csv(os.path.join(base_dir, '../map/data_trip_sum.csv'))
 
 all_cell = gpd.read_file(os.path.join(base_dir, "../subzone-cell/final_pois_2.geojson"))
 
-print("Preparing uniform weights...")
-# Since each cell is exactly the same size in the grid (by definition of a regular grid), 
-# distributing uniformly by area means giving each cell in the subzone equal weight. 
-subzone_cell_count = all_cell.groupby('SUBZONE_C')['cell_id'].transform('count')
+print("Preparing POI-based weights...")
+# Distribute the subzone ground truth trips according to specific POI densities per cell 
+# This matches real-world concentration and aligns with the engine's Radiation model expectations!
 
-# Fallback to avoid divide-by-zero if a subzone has exactly 0 cells (it shouldn't in 'inner' merge)
-all_cell['o_weight'] = np.where(subzone_cell_count > 0, 1.0 / subzone_cell_count, 0)
-all_cell['d_weight'] = np.where(subzone_cell_count > 0, 1.0 / subzone_cell_count, 0)
+poi_cols = ['tourism', 'office', 'shop', 'amenity', 'public_transport']
+mass = 1.0 # 1.0 laplace smoothing so empty cells aren't strictly 0
+for col in poi_cols:
+    if col in all_cell.columns:
+        mass += pd.to_numeric(all_cell[col], errors='coerce').fillna(0)
+
+all_cell['mass'] = mass
+subzone_mass = all_cell.groupby('SUBZONE_C')['mass'].transform('sum')
+
+# Calculate explicit feature proportion instead of division by simple geometric grid counts
+all_cell['o_weight'] = np.where(subzone_mass > 0, all_cell['mass'] / subzone_mass, 0)
+all_cell['d_weight'] = np.where(subzone_mass > 0, all_cell['mass'] / subzone_mass, 0)
 
 print("Distributing trips...")
 # Merge trips with origin cells
