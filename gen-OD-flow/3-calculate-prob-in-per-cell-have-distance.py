@@ -87,10 +87,16 @@ for index, row in out_data.iterrows():
     # Filter for under_1km category
     under_1km = cell_neighbors[cell_neighbors['category'] == "under_1km"]
     if not under_1km.empty:
-        count_0 = len(under_1km)
-        for ix, rw in under_1km.iterrows():
-            p_ij = p0 / count_0
-            final_probs.append([cell_id, rw["neighbor_id"], p_ij])
+        sum_Aij = under_1km['raw_Aij'].sum()
+        if sum_Aij > 0:
+            for ix, rw in under_1km.iterrows():
+                p_ij = (rw['raw_Aij'] / sum_Aij) * p0
+                final_probs.append([cell_id, rw["neighbor_id"], p_ij])
+        else:
+            count_0 = len(under_1km)
+            for ix, rw in under_1km.iterrows():
+                p_ij = p0 / count_0
+                final_probs.append([cell_id, rw["neighbor_id"], p_ij])
 
     # Filter for 1km-10km category
     group_1km_10km = cell_neighbors[cell_neighbors['category'] == "1km-10km"]
