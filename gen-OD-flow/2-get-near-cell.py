@@ -6,8 +6,6 @@ import numpy as np
 gdf = gpd.read_file('final_summed_out_cells.geojson').reset_index()
 gdf = gdf.to_crs(epsg=3414) # Changed from Korea (5179) to Singapore SVY21 (3414)
 
-R = 6371.0 # Earth radius in km
-
 # 2. Define thresholds in meters
 threshold_near = 1000  # 1km
 threshold_far = 10000  # 10km
@@ -30,10 +28,11 @@ for index, row in gdf.iterrows():
     for index2, row2 in gdf.iterrows():
         result.append({
             "cell_id": row["cell_id"],
+            "subzone_id": row["SUBZONE_C"],
             "neighbor_id": row2["cell_id"],
+            "neighbor_subzone_id": row2["SUBZONE_C"],
             "distance_m": calculate_distance(row, row2)
         })
-
 
 # # 8. Export
 # output_gdf = nearby.to_crs(epsg=4326)

@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from scipy.stats import entropy
 import os
+import geopandas as gpd
+from shapely.geometry import Point
 
 # --- 1. CONFIGURATION ---
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -9,25 +11,30 @@ gt_file = os.path.join(base_dir, '../map/data_sgp_pcm_trip.csv')
 fb_file = os.path.join(base_dir, '../map/1922039342088483_2025-12-17.csv')
 district_map_file = os.path.join(base_dir, '../map/district_zone.csv')
 
-def haversine_vectorized(lat1, lon1, lat2, lon2):
-    R = 6371.0 # Earth radius in km
-    lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = np.sin(dlat/2.0)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2.0)**2
-    c = 2 * np.arcsin(np.sqrt(a))
-    km = R * c
-    return km
-
 print("1. Loading Ground Truth Data and District mapping...")
 gt_df = pd.read_csv(gt_file)
 district_zone_df = pd.read_csv(district_map_file)
 
-# Calculate distances
-gt_df['distance_km'] = haversine_vectorized(
-    gt_df['ORIGIN_SUBZONE_Y'], gt_df['ORIGIN_SUBZONE_X'],
-    gt_df['DESTINATION_SUBZONE_Y'], gt_df['DESTINATION_SUBZONE_X']
-)
+# Tạo cột Geometry cho điểm đi (Origin)
+origin_points = gpd.points_from_xy(gt_df['ORIGIN_SUBZONE_X'], gt_df['ORIGIN_SUBZONE_Y'])
+# Tạo cột Geometry cho điểm đến (Destination)
+dest_points = gpd.points_from_xy(gt_df['DESTINATION_SUBZONE_X'], gt_df['DESTINATION_SUBZONE_Y'])
+
+# Tạo GeoDataFrame (Hệ tọa độ gốc là WGS84 - EPSG:4326)
+gdf_origin = gpd.GeoDataFrame(gt_df, geometry=origin_points, crs="EPSG:4326")
+gdf_dest = gpd.GeoDataFrame(gt_df, geometry=dest_points, crs="EPSG:4326")
+
+# Chuyển sang SVY21 (EPSG:3414)
+gdf_origin_svy21 = gdf_origin.to_crs(epsg=3414)
+gdf_dest_svy21 = gdf_dest.to_crs(epsg=3414)
+
+# Tính khoảng cách Euclidean trên mặt phẳng SVY21
+# Kết quả trả về đơn vị là MÉT
+gt_df['distance_meters'] = gdf_origin_svy21.geometry.distance(gdf_dest_svy21.geometry)
+
+# Nếu muốn đổi sang KM
+gt_df['distance_km'] = gt_df['distance_meters'] / 1000
+
 
 # Categorize distances into Facebook bins
 conditions = [
@@ -43,15 +50,16 @@ gt_df['category'] = np.select(conditions, choices, default='100+')
 # Merge ORIGIN_SUBZONE with district mapping
 gt_df = gt_df.merge(district_zone_df, left_on='ORIGIN_SUBZONE', right_on='zone_id', how='left')
 
-# Drop trips with no known district
-gt_df = gt_df.dropna(subset=['district_id'])
+# gt_df.to_csv(os.path.join(base_dir, 'gt_with_distance.csv'), index=False)
 
 # Aggregate total counts for each category per district
 gt_agg = gt_df.groupby(['district_id', 'district_name', 'category'])['COUNT'].sum().reset_index()
 
+
 # Normalize within each district
 gt_agg['total_district_trips'] = gt_agg.groupby('district_id')['COUNT'].transform('sum')
 gt_agg['p_gt'] = gt_agg['COUNT'] / gt_agg['total_district_trips']
+gt_agg.to_csv(os.path.join(base_dir, 'gt_with_distance.csv'), index=False)
 
 
 print("\n2. Loading Facebook Data...")
@@ -73,6 +81,7 @@ fb_agg = fb_agg.rename(columns={
     'home_to_ping_distance_category': 'category'
 })
 
+fb_agg.to_csv(os.path.join(base_dir, 'fb_agg.csv'), index=False)
 
 print("\n3. Comparing Distributions PER DISTRICT...")
 

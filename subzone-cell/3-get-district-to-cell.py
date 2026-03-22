@@ -25,14 +25,13 @@ overlay = gpd.overlay(cell_gdf, singapore_gdf, how='intersection')
 # Even if data is for SGN, EPSG:3414 or EPSG:3857 works better than EPSG:4326 for area comparison
 overlay['intersection_area'] = overlay.to_crs(epsg=3414).geometry.area
 
-# Sort by cell_id and intersection area, keep the one with largest area
+# Sort by cell_id and intersection area, keep the all 
 overlay = overlay.sort_values(by=['cell_id', 'intersection_area'], ascending=[True, False])
-assigned_intersect = overlay.drop_duplicates(subset=['cell_id'])
 
 # Merge back to original cells to keep original geometry
 cols_to_merge = [col for col in singapore_gdf.columns if col != 'geometry']
 assigned_cells = cell_gdf.merge(
-    assigned_intersect[['cell_id'] + cols_to_merge],
+    overlay[['cell_id'] + cols_to_merge + ['intersection_area']],
     on='cell_id',
     how='inner'
 )
@@ -63,6 +62,6 @@ else:
     final_cell_gdf = assigned_cells
 
 # Save the final geodataframe
-output_file = "detail_pois_2.geojson"
+output_file = "detail_pois_district.geojson"
 final_cell_gdf.to_file(output_file, driver="GeoJSON")
 print(f"Successfully processed {len(final_cell_gdf)} cells and saved to {output_file}")
