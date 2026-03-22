@@ -22,8 +22,8 @@ cd ../subzone-cell
 source ../.venv/bin/activate
 python 1-get-cell-by-lat-lon.py
 python 2-get-pois-by-id.py
-python 3-get-district-to-cell.py
-python 4-get-prob-cell.py
+python 3-get-subzone-to-cell.py
+python 4-get-district-to-cell.py
 python 5-sum-pair.py
 
 echo "========================================="

@@ -2,6 +2,7 @@ import math
 import os
 import pandas as pd
 import geopandas as gpd
+import numpy as np
 
 # 1. Load Data
 # ensure we read files relative to this script's directory so it works when
@@ -11,24 +12,33 @@ out_data = gpd.read_file(os.path.join(base_dir, "final_summed_out_cells.geojson"
 pair_cell_gdf = pd.read_csv(os.path.join(base_dir, "categorized_cell_pairs.csv"))
 
 def calculate_origin_mass(row):
-    # pop_count = float(row.get("pop_count", 0))
-    # log1p prevents huge population sectors from destroying flow balance, while +1 prevents zeroes
-    # return math.log1p(pop_count) + 1
-    poi_sum = float(row.get("tourism", 0)) + float(row.get("office", 0)) + float(row.get("shop", 0)) + float(row.get("amenity", 0)) + float(row.get("public_transport", 0))
-    # Destinations draw exclusively based on POIs.
-    return poi_sum + 1
+    # ORIGIN MASS: Động lực sinh ra chuyến đi là DÂN SỐ (Population)
+    # Không dùng POI cho điểm đi (trừ khi là mô hình return trip)
+    pop_count = float(row.get("pop_count", 0))
+    # Cộng 1 để tránh log(0) hoặc chia cho 0
+    return pop_count + 1.0
 
 def calculate_dest_mass(row):
-    poi_sum = float(row.get("tourism", 0)) + float(row.get("office", 0)) + float(row.get("shop", 0)) + float(row.get("amenity", 0)) + float(row.get("public_transport", 0))
-    # Destinations draw exclusively based on POIs.
-    return poi_sum + 1
+    # DESTINATION MASS: Động lực hút chuyến đi là POI (Văn phòng, Trường học, Trạm xe)
+    office = float(row.get("office", 0))
+    transport = float(row.get("public_transport", 0))
+    shop = float(row.get("shop", 0))
+    amenity = float(row.get("amenity", 0))
+    tourism = float(row.get("tourism", 0))
+    
+    # Trọng số heuristic mạnh: Office * 20, Transport * 10 (Hub giao thông), Shop * 2
+    # Cần tạo sự chênh lệch lớn để dòng chảy tập trung về các trung tâm
+    weighted_sum = (office * 20.0) + (transport * 10.0) + (shop * 2.0) + (amenity * 1.0) + (tourism * 1.0)
+    return weighted_sum + 1.0
 
 # Add masses to out_data and create fast lookups
 out_data['origin_mass'] = out_data.apply(calculate_origin_mass, axis=1)
 out_data['dest_mass'] = out_data.apply(calculate_dest_mass, axis=1)
 
-origin_lookup = out_data.set_index(['cell_id', 'zone_id'])['origin_mass'].to_dict()
-dest_lookup = out_data.set_index(['cell_id', 'zone_id'])['dest_mass'].to_dict()
+# Fix Lookup: Sử dụng cell_id đơn nhất làm key để map() hoạt động chính xác
+unique_cells = out_data.drop_duplicates(subset=['cell_id'])
+origin_lookup = unique_cells.set_index('cell_id')['origin_mass'].to_dict()
+dest_lookup = unique_cells.set_index('cell_id')['dest_mass'].to_dict()
 
 prob_data = pd.read_csv(os.path.join(base_dir, "../check-data-distribution/gt_prob.csv"))
 
@@ -125,9 +135,12 @@ for index, row in out_data.iterrows():
     
     # Filter for under_1km category
     if has_under:
-        count = len(under_1km)
-        prob = p0_adj / count
+        sum_Aij = under_1km['raw_Aij'].sum()
+        if sum_Aij <= 0:
+            sum_Aij = 0
+            
         for _, rw in under_1km.iterrows():
+            prob = (rw['raw_Aij'] / sum_Aij * p0_adj) if sum_Aij > 0 else (p0_adj / len(under_1km))
             final_probs.append([cell_id, subzone_id, rw["neighbor_id"], rw["neighbor_subzone_id"], prob])
 
     # Filter for 1km-10km category
