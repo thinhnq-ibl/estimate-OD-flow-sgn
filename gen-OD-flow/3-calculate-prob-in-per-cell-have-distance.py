@@ -9,6 +9,8 @@ import numpy as np
 # launched from the project root or any other cwd
 base_dir = os.path.dirname(os.path.abspath(__file__))
 out_data = gpd.read_file(os.path.join(base_dir, "final_summed_out_cells.geojson"))
+# Load FULL cell data to ensure all destinations (even those without outflow) are known
+all_cells = gpd.read_file(os.path.join(base_dir, "../subzone-cell/detail_pois_district.geojson"))
 pair_cell_gdf = pd.read_csv(os.path.join(base_dir, "categorized_cell_pairs.csv"))
 
 def calculate_origin_mass(row):
@@ -25,18 +27,20 @@ def calculate_dest_mass(row):
     shop = float(row.get("shop", 0))
     amenity = float(row.get("amenity", 0))
     tourism = float(row.get("tourism", 0))
+    leisure = float(row.get("leisure", 0))
     
-    # Trọng số heuristic mạnh: Office * 20, Transport * 10 (Hub giao thông), Shop * 2
+    # ALIGN WEIGHTS WITH GROUND TRUTH GENERATION (1-get-cpc-cell-out.py)
+    # Office * 15, Transport * 10, Shop * 5, Others * 1
     # Cần tạo sự chênh lệch lớn để dòng chảy tập trung về các trung tâm
-    weighted_sum = (office * 20.0) + (transport * 10.0) + (shop * 2.0) + (amenity * 1.0) + (tourism * 1.0)
+    weighted_sum = (office * 15.0) + (transport * 10.0) + (shop * 5.0) + (amenity * 1.0) + (tourism * 1.0) + (leisure * 1.0)
     return weighted_sum + 1.0
 
-# Add masses to out_data and create fast lookups
-out_data['origin_mass'] = out_data.apply(calculate_origin_mass, axis=1)
-out_data['dest_mass'] = out_data.apply(calculate_dest_mass, axis=1)
+# Calculate masses for ALL cells to ensure global lookup coverage
+all_cells['origin_mass'] = all_cells.apply(calculate_origin_mass, axis=1)
+all_cells['dest_mass'] = all_cells.apply(calculate_dest_mass, axis=1)
 
 # Fix Lookup: Sử dụng cell_id đơn nhất làm key để map() hoạt động chính xác
-unique_cells = out_data.drop_duplicates(subset=['cell_id'])
+unique_cells = all_cells.drop_duplicates(subset=['cell_id'])
 origin_lookup = unique_cells.set_index('cell_id')['origin_mass'].to_dict()
 dest_lookup = unique_cells.set_index('cell_id')['dest_mass'].to_dict()
 
@@ -76,7 +80,11 @@ def compute_radiation(xi, xj, sij):
 # 3. Process by Origin Cell
 final_probs = []
 
+# Group pairs by origin for O(1) access inside loop
+pair_grouped = pair_cell_gdf.groupby(['cell_id', 'subzone_id'])
+
 print("Running fast radiation model O(N)...")
+
 for index, row in out_data.iterrows():
     cell_id = row["cell_id"]
     subzone_id = row["zone_id"]
@@ -92,8 +100,11 @@ for index, row in out_data.iterrows():
     p10 = prob_lookup[cell_id, subzone_id]['prob_10']
     over_p10 = 1 - (p10 + p0)
     
-    # ⚡ [TỐI ƯU SIÊU NHANH] Tách lấy toàn bộ neighbor của ĐÚNG cell_id subzone_id này ra 1 data frame cực nhỏ.
-    cell_neighbors = pair_cell_gdf[(pair_cell_gdf['cell_id'] == cell_id) & (pair_cell_gdf['subzone_id'] == subzone_id)].copy()
+    # ⚡ [TỐI ƯU SIÊU NHANH] Use groupby object instead of filtering df
+    try:
+        cell_neighbors = pair_grouped.get_group((cell_id, subzone_id)).copy()
+    except KeyError:
+        cell_neighbors = pd.DataFrame()
     
     if cell_neighbors.empty:
         print(f"No neighbors found for cell {cell_id, subzone_id}")
