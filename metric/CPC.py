@@ -76,14 +76,14 @@ def evaluate_model(df_obs, df_pred, model_name):
     df_pred['norm_total_in'] = pd.to_numeric(df_pred['norm_total_in'], errors='coerce').fillna(0)
 
     # Aggregate duplicates by grouping cell_id and neighbor_id strictly to prevent cartesian explosion
-    df_obs = df_obs.groupby(['cell_id', 'neighbor_id'], as_index=False)['norm_total_in'].sum()
-    df_pred = df_pred.groupby(['cell_id', 'neighbor_id'], as_index=False)['norm_total_in'].sum()
+    df_obs = df_obs.groupby(['cell_id', 'subzone_id', 'neighbor_id', 'neighbor_subzone_id'], as_index=False)['norm_total_in'].sum()
+    df_pred = df_pred.groupby(['cell_id', 'subzone_id', 'neighbor_id', 'neighbor_subzone_id'], as_index=False)['norm_total_in'].sum()
 
     # Outer merge to align the 95,000 cell pairs correctly
     merged = pd.merge(
-        df_obs[['cell_id', 'neighbor_id', 'norm_total_in']], 
-        df_pred[['cell_id', 'neighbor_id', 'norm_total_in']], 
-        on=['cell_id', 'neighbor_id'], 
+        df_obs[['cell_id', 'subzone_id', 'neighbor_id', 'neighbor_subzone_id', 'norm_total_in']], 
+        df_pred[['cell_id', 'subzone_id', 'neighbor_id', 'neighbor_subzone_id', 'norm_total_in']], 
+        on=['cell_id', 'subzone_id', 'neighbor_id', 'neighbor_subzone_id'], 
         how='outer',
         suffixes=('_obs', '_pred')
     ).fillna(0) # Fill missing flows with 0

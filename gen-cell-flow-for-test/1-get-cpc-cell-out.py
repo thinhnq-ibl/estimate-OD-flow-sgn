@@ -43,12 +43,14 @@ for _, row in trips.iterrows():
             flow_count = count * o_row['o_weight'] * d_row['d_weight']
             final_flow.append({
                 'origin_cell_id': o_row['cell_id'],
+                'origin_subzone_id': o_row['SUBZONE_C'],
                 'destination_cell_id': d_row['cell_id'],
+                'destination_subzone_id': d_row['SUBZONE_C'],
                 'flow_count': flow_count
             })
 
 
-out_path = "all_flow_cell33.csv"
+out_path = "all_flow_cell_with_subzone.csv"
 data = pd.DataFrame(final_flow)
 print(data['flow_count'].sum())
 data.to_csv(out_path, index=False)
