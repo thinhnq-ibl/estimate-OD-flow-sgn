@@ -61,6 +61,10 @@ if not unassigned_cells.empty:
 else:
     final_cell_gdf = assigned_cells
 
+# keep row have intersection area > 10% of the cell area, to avoid assigning a cell to a district just because it has a tiny sliver of intersection
+final_cell_gdf['cell_area'] = final_cell_gdf.to_crs(epsg=3414).geometry.area
+final_cell_gdf = final_cell_gdf[final_cell_gdf['intersection_area'] / final_cell_gdf['cell_area'] > 0.045].copy()
+
 # Save the final geodataframe
 output_file = "detail_pois_district.geojson"
 final_cell_gdf.to_file(output_file, driver="GeoJSON")

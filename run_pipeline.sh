@@ -12,8 +12,8 @@ echo " STEP 1: PROCESSING CHECK-DATA-DISTRIBUTION "
 echo "========================================="
 cd ./check-data-distribution
 source ../.venv/bin/activate
-python compare_distribution.py
 python map_subzone.py
+python compare_distribution.py
 
 echo "========================================="
 echo " STEP 2: PROCESSING SUBZONE-CELL "

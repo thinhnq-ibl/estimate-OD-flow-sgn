@@ -10,16 +10,25 @@ base_dir = os.path.dirname(os.path.abspath(__file__))
 out_data = gpd.read_file(os.path.join(base_dir, "final_summed_out_cells.geojson"))
 pair_cell_gdf = pd.read_csv(os.path.join(base_dir, "categorized_cell_pairs.csv"))
 
-def calculate_mass(row):
-    poi_sum = float(row.get("tourism", 0)) + float(row.get("office", 0)) + float(row.get("shop", 0)) + float(row.get("amenity", 0)) + float(row.get("public_transport", 0))
+def calculate_origin_mass(row):
     # pop_count = float(row.get("pop_count", 0))
-    # Sử dụng log1p (log cơ số tự nhiên cộng 1) để pop_count không chiếm ưu thế, nhưng vẫn tạo trọng số khi poi_sum = 0
+    # log1p prevents huge population sectors from destroying flow balance, while +1 prevents zeroes
+    # return math.log1p(pop_count) + 1
+    poi_sum = float(row.get("tourism", 0)) + float(row.get("office", 0)) + float(row.get("shop", 0)) + float(row.get("amenity", 0)) + float(row.get("public_transport", 0))
+    # Destinations draw exclusively based on POIs.
     return poi_sum + 1
-    # + math.log1p(pop_count) # +1.0 laplace smoothing matching ground truth
 
-# Add mass to out_data and create a fast lookup
-out_data['mass'] = out_data.apply(calculate_mass, axis=1)
-poi_lookup = out_data.set_index('cell_id')['mass'].to_dict()
+def calculate_dest_mass(row):
+    poi_sum = float(row.get("tourism", 0)) + float(row.get("office", 0)) + float(row.get("shop", 0)) + float(row.get("amenity", 0)) + float(row.get("public_transport", 0))
+    # Destinations draw exclusively based on POIs.
+    return poi_sum + 1
+
+# Add masses to out_data and create fast lookups
+out_data['origin_mass'] = out_data.apply(calculate_origin_mass, axis=1)
+out_data['dest_mass'] = out_data.apply(calculate_dest_mass, axis=1)
+
+origin_lookup = out_data.set_index(['cell_id', 'zone_id'])['origin_mass'].to_dict()
+dest_lookup = out_data.set_index(['cell_id', 'zone_id'])['dest_mass'].to_dict()
 
 prob_data = pd.read_csv(os.path.join(base_dir, "../check-data-distribution/gt_prob.csv"))
 
@@ -43,11 +52,11 @@ for district, group in prob_data.groupby('district_id'):
 
 prob_lookup = {}
 for _, row in out_data.iterrows():
-    prob_lookup[row['cell_id']] = district_prob_lookup.get(row.get('district_id'), {'prob_0': 0.0, 'prob_10': 0.0})
+    prob_lookup[row['cell_id'], row['zone_id']] = district_prob_lookup.get(row.get('district_id'), {'prob_0': 0.0, 'prob_10': 0.0})
 
 
-# Precompute neighbor masses globally for extreme speed 
-pair_cell_gdf['neighbor_mass'] = pair_cell_gdf['neighbor_id'].map(poi_lookup).fillna(0)
+# Precompute neighbor destination masses globally for extreme speed 
+pair_cell_gdf['neighbor_mass'] = pair_cell_gdf['neighbor_id'].map(dest_lookup).fillna(0)
 
 # radiation formula helper (xi will be bound later)
 def compute_radiation(xi, xj, sij):
@@ -60,17 +69,17 @@ final_probs = []
 print("Running fast radiation model O(N)...")
 for index, row in out_data.iterrows():
     cell_id = row["cell_id"]
-    subzone_id = row["SUBZONE_C"]
+    subzone_id = row["zone_id"]
     
-    xi = poi_lookup.get(cell_id, 0)
+    xi = origin_lookup.get(cell_id, 0)
     
     # Skip if cell missing probabilities
-    if cell_id not in prob_lookup:
-        print(f"No prob found for cell {cell_id}")
+    if (cell_id, subzone_id) not in prob_lookup:
+        print(f"No prob found for cell {cell_id, subzone_id}, skipping.")
         continue
         
-    p0 = prob_lookup[cell_id]['prob_0']
-    p10 = prob_lookup[cell_id]['prob_10']
+    p0 = prob_lookup[cell_id, subzone_id]['prob_0']
+    p10 = prob_lookup[cell_id, subzone_id]['prob_10']
     over_p10 = 1 - (p10 + p0)
     
     # ⚡ [TỐI ƯU SIÊU NHANH] Tách lấy toàn bộ neighbor của ĐÚNG cell_id subzone_id này ra 1 data frame cực nhỏ.
@@ -90,51 +99,57 @@ for index, row in out_data.iterrows():
     # Calculate pre-normalized radiation attraction A_ij for all neighbors
     cell_neighbors['raw_Aij'] = cell_neighbors.apply(lambda rw: compute_radiation(xi, rw['neighbor_mass'], rw['s_ij']), axis=1)
     
-    # Filter for under_1km category
+    # Identify groups
     under_1km = cell_neighbors[cell_neighbors['category'] == "under_1km"]
-    if not under_1km.empty:
-        sum_Aij = under_1km['raw_Aij'].sum()
-        if sum_Aij > 0:
-            for ix, rw in under_1km.iterrows():
-                if rw['raw_Aij'] <= 0:
-                    print(f"raw_Aij <= 0 for cell {cell_id} and neighbor {rw['neighbor_id']}")
-                p_ij = (rw['raw_Aij'] / sum_Aij) * p0
-                if p_ij <= 0:
-                    print(f"p_ij <= 0 for cell {cell_id} and neighbor {rw['neighbor_id']}",p0,p10)
-                final_probs.append([cell_id, subzone_id, rw["neighbor_id"], rw["neighbor_subzone_id"], p_ij])
-        else:
-            count_0 = len(under_1km)
-            for ix, rw in under_1km.iterrows():
-                p_ij = p0 / count_0
-                if p_ij <= 0:
-                    print(f"p_ij <= 0 for cell {cell_id} and neighbor {rw['neighbor_id']}",p0,p10)
-                final_probs.append([cell_id, subzone_id, rw["neighbor_id"], rw["neighbor_subzone_id"], p_ij])
+    group_1km_10km = cell_neighbors[cell_neighbors['category'] == "1km-10km"]
+    group_over_10km = cell_neighbors[(cell_neighbors['category'] == "10km-100km") & (cell_neighbors['neighbor_id'] != cell_id)]
+    
+    # Check availability
+    has_under = not under_1km.empty
+    has_1_10 = not group_1km_10km.empty
+    has_over = not group_over_10km.empty
+    
+    # Normalization: If a category is missing, redistribute its weight to others
+    w_under = p0 if has_under else 0.0
+    w_1_10 = p10 if has_1_10 else 0.0
+    w_over = over_p10 if has_over else 0.0
+    
+    total_w = w_under + w_1_10 + w_over
+    
+    if total_w <= 0:
+        continue
+        
+    p0_adj = w_under / total_w
+    p10_adj = w_1_10 / total_w
+    over_p10_adj = w_over / total_w
+    
+    # Filter for under_1km category
+    if has_under:
+        count = len(under_1km)
+        prob = p0_adj / count
+        for _, rw in under_1km.iterrows():
+            final_probs.append([cell_id, subzone_id, rw["neighbor_id"], rw["neighbor_subzone_id"], prob])
 
     # Filter for 1km-10km category
-    group_1km_10km = cell_neighbors[cell_neighbors['category'] == "1km-10km"]
-    if not group_1km_10km.empty: 
+    if has_1_10: 
         sum_Aij = group_1km_10km['raw_Aij'].sum()
-        if sum_Aij > 0:
-            for ix, rw in group_1km_10km.iterrows():
-                if rw['raw_Aij'] <= 0:
-                    print(f"raw_Aij <= 0 for cell {cell_id} and neighbor {rw['neighbor_id']}")
-                prob = (rw['raw_Aij'] / sum_Aij) * p10
-                if prob <= 0:
-                    print(f"p_ij <= 0 for cell {cell_id} and neighbor {rw['neighbor_id']}",p0,p10)
-                final_probs.append([cell_id, subzone_id, rw["neighbor_id"], rw["neighbor_subzone_id"], prob])
+        # Use uniform if radiation attraction is 0 (fallback)
+        if sum_Aij <= 0:
+            sum_Aij = 0 # trigger uniform
+            
+        for _, rw in group_1km_10km.iterrows():
+            prob = (rw['raw_Aij'] / sum_Aij * p10_adj) if sum_Aij > 0 else (p10_adj / len(group_1km_10km))
+            final_probs.append([cell_id, subzone_id, rw["neighbor_id"], rw["neighbor_subzone_id"], prob])
                 
     # Filter for 10km-100km category
-    group_over_10km = cell_neighbors[(cell_neighbors['category'] == "10km-100km") & (cell_neighbors['neighbor_id'] != cell_id)]
-    if not group_over_10km.empty:
+    if has_over:
         sum_Aij = group_over_10km['raw_Aij'].sum()
-        if sum_Aij > 0:
-            for ix, rw in group_over_10km.iterrows():
-                if rw['raw_Aij'] <= 0:
-                    print(f"raw_Aij <= 0 for cell {cell_id} and neighbor {rw['neighbor_id']}")
-                prob = (rw['raw_Aij'] / sum_Aij) * over_p10
-                if prob <= 0:
-                    print(f"p_ij <= 0 for cell {cell_id} and neighbor {rw['neighbor_id']}",p0,p10)
-                final_probs.append([cell_id, subzone_id, rw["neighbor_id"], rw["neighbor_subzone_id"], prob])
+        if sum_Aij <= 0:
+            sum_Aij = 0
+            
+        for _, rw in group_over_10km.iterrows():
+            prob = (rw['raw_Aij'] / sum_Aij * over_p10_adj) if sum_Aij > 0 else (over_p10_adj / len(group_over_10km))
+            final_probs.append([cell_id, subzone_id, rw["neighbor_id"], rw["neighbor_subzone_id"], prob])
                 
 # 4. Merge results back to original dataframe
 
