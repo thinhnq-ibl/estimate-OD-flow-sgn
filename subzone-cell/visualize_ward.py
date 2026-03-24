@@ -39,7 +39,7 @@ print(gdf_edges.head())
 # Create Plot
 fig, ax = plt.subplots(figsize=(30, 20))
 # Plot city boundary
-hcmc_boundary.boundary.plot(ax=ax, color='green', linewidth=2)
+# hcmc_boundary.boundary.plot(ax=ax, color='green', linewidth=2)
 gdf_edges.plot(ax=ax, color='blue', linewidth=5, alpha=0.7)
 # Label each cell
 # for x, y, label in zip(gdf["centroid"].x, gdf["centroid"].y, gdf.cell_id):
