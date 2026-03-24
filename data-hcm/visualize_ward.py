@@ -20,19 +20,19 @@ print(vnm_city2[vnm_city2["NAME_2"] == "Quận 1"].head())
 
 print(hcmc_boundary.crs)
 
-# load edge data from ../obser_data_2_4_25.csv
-edge_data = pd.read_csv("../obser_data_2_4_25.csv")
+# load edge data from ./ket_qua_quan_trac_1_selected_lat_lon.csv
+edge_data = pd.read_csv("./ket_qua_quan_trac_1_selected_lat_lon.csv")
 print(edge_data.count())
 print(edge_data.head())
 # data have lat_st, lon_st, lat_en, lon_en
 # Create a GeoDataFrame for edges by connecting start and end points
-result = []
+edge_data["geometry"] = None
 for index, row in edge_data.iterrows():
-    print(row.iat[10], row.iat[11], row.iat[12], row.iat[13])
-    line = LineString([(row.iat[11], row.iat[10]), (row.iat[13], row.iat[12])])
-    result.append(line)
-
-edge_data['geometry'] = result
+    if row.iat[14] > 0:
+      line = LineString([(row.iat[15], row.iat[14]), (row.iat[17], row.iat[16])])
+      edge_data.loc[index, "geometry"] = line
+    
+# edge_data['geometry'] = result
 gdf_edges = gpd.GeoDataFrame(edge_data, geometry='geometry', crs="EPSG:4326")
 print(gdf_edges.head())
 
