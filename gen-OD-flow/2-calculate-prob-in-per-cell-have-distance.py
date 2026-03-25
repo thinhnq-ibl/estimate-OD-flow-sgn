@@ -16,101 +16,84 @@ landuse_data = gpd.read_file(os.path.join(base_dir, "../zone/detail_landuse.geoj
 # CONFIGURATION: POI WEIGHTS
 # Tuning these weights is critical for improving CPC.
 # Suggestion: Use an optimization algorithm to find the best weights that match Ground Truth flow.
-# POI_WEIGHTS = {
-#     'office': 15,
-#     'public_transport': 100,
-#     'shop': 12,
-#     'amenity': 7,
-#     'tourism': 5,
-#     'leisure': 2
-# }
 
 POI_WEIGHTS = {
-    'office': 1,
-    'public_transport': 1,
-    'shop': 1,
-    'amenity': 1,
-    'tourism': 1,
+    'office': 15,
+    'public_transport': 50,
+    'shop': 10,
+    'amenity': 2,
+    'tourism': 4,
     'leisure': 1
 }
 
 #map cell to district for probability lookup
 out_data = out_data.merge(district_map, left_on='SUBZONE_C', right_on='zone_id', how='left')
-out_data['district'] = out_data['district_id'].fillna(-1, inplace=True)  # Handle cells without a district mapping
+out_data['district_id'] = out_data['district_id'].fillna(-1)  # Handle cells without a district mapping
 
-# print(out_data.head())
-
-def calculate_origin_mass(row):
-    # ORIGIN MASS: Động lực sinh ra chuyến đi là DÂN SỐ (Population)
-    # Không dùng POI cho điểm đi (trừ khi là mô hình return trip)
-    pop_count = float(row.get("population", 0))
-    # Cộng 1 để tránh log(0) hoặc chia cho 0
-    # r
-    return pop_count/10000 + 1
+# ORIGIN MASS: Động lực sinh ra chuyến đi là DÂN SỐ (Population)
+# VECTORIZED OPTIMIZATION: Replaced .apply() with vectorized operations for speed
+out_data['origin_mass'] = out_data['population'].fillna(0) + 1.0
 
 # Calculate masses for ALL cells to ensure global lookup coverage
-# VECTORIZED OPTIMIZATION: Replaced .apply() with vectorized operations for speed
-
 # Calculate Destination Mass using vectorized weighted sum
 # Initialize with 1.0 base mass
-out_data['dest_mass'] = 1.0 
+out_data['dest_mass'] = 1.0
 for col, weight in POI_WEIGHTS.items():
     if col in out_data.columns:
         out_data['dest_mass'] += out_data[col].fillna(0) * weight
     else:
-        print(f"Warning: Column {col} not found in data, assuming 0.")
-
-# out_data['origin_mass'] = out_data.apply(calculate_origin_mass, axis=1)
-out_data['origin_mass'] = out_data['dest_mass'].fillna(0) + np.log1p(out_data['population'].fillna(0) + 1)
+        print(f"Warning: POI column '{col}' not found in data.")
 
 # Fix Lookup: Sử dụng cell_id đơn nhất làm key để map() hoạt động chính xác
 unique_cells = out_data.drop_duplicates(subset=['SUBZONE_C']).copy()
 origin_lookup = unique_cells.set_index('SUBZONE_C')['origin_mass'].to_dict()
 dest_lookup = unique_cells.set_index('SUBZONE_C')['dest_mass'].to_dict()
 
-# prob_data = pd.read_csv(os.path.join(base_dir, "../check-data-distribution/gt_prob.csv"))
-
-# # Clean category column once to ensure consistent lookup
-# prob_data['clean_category'] = prob_data['category'].astype(str).str.replace(' ', '')
-
-# district_prob_lookup = {}
-# for district, group in prob_data.groupby('district_id'):
-#     try:
-#         p0 = float(group[group['category'] == '0']['p_gt'].iloc[0])
-#     except IndexError:
-#         print(f"No p0 found for district {district}")
-#         p0 = 0.0
-        
-#     try:
-#         # Match '(0,10)' via stripped strings
-#         p10 = float(group[group['clean_category'] == '(0,10)']['p_gt'].iloc[0])
-#     except IndexError:
-#         print(f"No p10 found for district {district}")
-#         p10 = 0.0
-        
-#     district_prob_lookup[district] = {'prob_0': p0, 'prob_10': p10}
-
-prob_data = pd.read_csv(os.path.join(base_dir, "../check-data-distribution/fb_agg.csv"))
-
-# Clean category column once to ensure consistent lookup
-prob_data['clean_category'] = prob_data['category'].astype(str).str.replace(' ', '')
-
 district_prob_lookup = {}
-for district, group in prob_data.groupby('district_id'):
-    try:
-        p0 = float(group[group['category'] == '0']['p_fb'].iloc[0])
-    except IndexError:
-        print(f"No p0 found for district {district}")
-        p0 = 0.0
-        
-    try:
-        # Match '(0,10)' via stripped strings
-        p10 = float(group[group['clean_category'] == '(0,10)']['p_fb'].iloc[0])
-    except IndexError:
-        print(f"No p10 found for district {district}")
-        p10 = 0.0
-        
-    district_prob_lookup[district] = {'prob_0': p0, 'prob_10': p10}
+ob = 1
+if ob == 1:
+    prob_data = pd.read_csv(os.path.join(base_dir, "../check-data-distribution/gt_prob.csv"))
+
+    # Clean category column once to ensure consistent lookup
+    prob_data['clean_category'] = prob_data['category'].astype(str).str.replace(' ', '')
+
+    for district, group in prob_data.groupby('district_id'):
+        try:
+            p0 = float(group[group['category'] == '0']['p_gt'].iloc[0])
+        except IndexError:
+            print(f"No p0 found for district {district}")
+            p0 = 0.0
+            
+        try:
+            # Match '(0,10)' via stripped strings
+            p10 = float(group[group['clean_category'] == '(0,10)']['p_gt'].iloc[0])
+        except IndexError:
+            print(f"No p10 found for district {district}")
+            p10 = 0.0
+            
+        district_prob_lookup[district] = {'prob_0': p0, 'prob_10': p10}
+else:
+    prob_data = pd.read_csv(os.path.join(base_dir, "../check-data-distribution/fb_agg.csv"))
+
+    # Clean category column once to ensure consistent lookup
+    prob_data['clean_category'] = prob_data['category'].astype(str).str.replace(' ', '')
+
+    district_prob_lookup = {}
+    for district, group in prob_data.groupby('district_id'):
+        try:
+            p0 = float(group[group['category'] == '0']['p_fb'].iloc[0])
+        except IndexError:
+            print(f"No p0 found for district {district}")
+            p0 = 0.0
+            
+        try:
+            # Match '(0,10)' via stripped strings
+            p10 = float(group[group['clean_category'] == '(0,10)']['p_fb'].iloc[0])
+        except IndexError:
+            print(f"No p10 found for district {district}")
+            p10 = 0.0
+            
+        district_prob_lookup[district] = {'prob_0': p0, 'prob_10': p10}
 
 
 prob_lookup = {}
@@ -120,13 +103,15 @@ for _, row in out_data.iterrows():
 # Precompute neighbor destination masses globally for extreme speed 
 pair_cell_gdf['neighbor_mass'] = pair_cell_gdf['neighbor_subzone_id'].map(dest_lookup).fillna(0)
 
+# OPTIMIZATION: Sort globally once to avoid sorting inside the loop
+pair_cell_gdf.sort_values(by=['subzone_id', 'distance_m'], inplace=True)
+
 # print(pair_cell_gdf.head())
 
 # radiation formula helper (xi will be bound later)
 def compute_radiation(xi, xj, sij, first_cell_mass):
     sij = max(sij - first_cell_mass, 0)  # Ensure s_ij doesn't include the first neighbor's mass
     denominator = (xi + sij) * (xi + xj + sij)
-    print(xi,  xj, sij, (xi*xj) / denominator )
     return (xi * xj) / denominator if denominator > 0 else 0
 
 # 3. Process by Origin Cell
@@ -163,9 +148,6 @@ for index, row in out_data.iterrows():
         print(f"No neighbors found for cell {subzone_id}")
         continue
         
-    # Sort by distance correctly and compute EXACT s_ij across all rings
-    cell_neighbors = cell_neighbors.sort_values('distance_m')
-    
     # s_ij is total mass strictly closer. Use groupby sum then cumsum then shift.
     ring_mass = cell_neighbors.groupby('distance_m')['neighbor_mass'].sum().cumsum().shift(fill_value=0)
     cell_neighbors['s_ij'] = cell_neighbors['distance_m'].map(ring_mass)
@@ -173,8 +155,11 @@ for index, row in out_data.iterrows():
     first_cell = cell_neighbors.iloc[0]['neighbor_mass']
     
     # Calculate pre-normalized radiation attraction A_ij for all neighbors
-    cell_neighbors['raw_Aij'] = cell_neighbors.apply(lambda rw: compute_radiation(xi, rw['neighbor_mass'], rw['s_ij'], first_cell), axis=1)
-
+    # OPTIMIZATION: Vectorize calculation instead of .apply()
+    s_ij_adj = np.maximum(cell_neighbors['s_ij'] - first_cell, 0)
+    denom = (xi + s_ij_adj) * (xi + cell_neighbors['neighbor_mass'] + s_ij_adj)
+    cell_neighbors['raw_Aij'] = np.where(denom > 0, (xi * cell_neighbors['neighbor_mass']) / denom, 0)
+    
     # Identify groups
     under_1km = cell_neighbors[cell_neighbors['category'] == "under_1km"]
     group_1km_10km = cell_neighbors[cell_neighbors['category'] == "1km-10km"]
@@ -201,14 +186,13 @@ for index, row in out_data.iterrows():
     # print(under_1km)
     # Filter for under_1km category
     if has_under:
-        under_1km_1 = under_1km[under_1km['distance_m'] > 0]  # Optional: Exclude zero attraction neighbors
-        sum_Aij = under_1km_1['raw_Aij'].sum()
+        sum_Aij = under_1km['raw_Aij'].sum()
         if sum_Aij <= 0:
-            sum_Aij = 0
-        under_1km.loc[under_1km['distance_m'] == 0, 'raw_Aij'] = 1-sum_Aij # Ensure zero-distance neighbors don't dominate
-            
+            sum_Aij = 0 # trigger uniform
+
         for _, rw in under_1km.iterrows():
-            prob = rw['raw_Aij'] * p0_adj if sum_Aij > 0 else (p0_adj / len(under_1km))
+            # FIX: Standard normalization: (val / sum) * total_prob
+            prob = (rw['raw_Aij'] / sum_Aij * p0_adj) if sum_Aij > 0 else (p0_adj / len(under_1km))
             final_probs.append([subzone_id, rw["neighbor_subzone_id"], prob])
 
     # Filter for 1km-10km category
@@ -232,7 +216,6 @@ for index, row in out_data.iterrows():
             prob = (rw['raw_Aij'] / sum_Aij * over_p10_adj) if sum_Aij > 0 else (over_p10_adj / len(group_over_10km))
             final_probs.append([subzone_id, rw["neighbor_subzone_id"], prob])
     
-    break
 # 4. Merge results back to original dataframe
 
 results_df = pd.DataFrame(final_probs, columns=['subzone_id','neighbor_subzone_id','in_prob'])
