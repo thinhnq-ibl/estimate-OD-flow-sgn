@@ -10,9 +10,15 @@ out_data = gpd.read_file(geojson_file2)
 # Ensure 'in_prob' column exists
 pair_cell_gdf['in_amount'] = 0.0
 
-# Extract the first cell_id as a scalar value (not a Series) FAST VECTORIZATION
-out_amount_dict = out_data.set_index('cell_id')['out_amount'].astype(float).to_dict()
-pair_cell_gdf['in_amount'] = pair_cell_gdf['cell_id'].map(out_amount_dict) * pair_cell_gdf['in_prob'].astype(float)
+# FAST VECTORIZATION: Use merge instead of apply for massive speedup
+# Prepare out_data for merge
+out_subset = out_data[['cell_id', 'SUBZONE_C', 'out_amount']].copy()
+out_subset.rename(columns={'SUBZONE_C': 'subzone_id'}, inplace=True)
 
-pair_cell_gdf = pair_cell_gdf.groupby(['cell_id', 'neighbor_id'], as_index=False)['in_amount'].sum()
-pair_cell_gdf.to_csv(csv_file, index=False)
+# Merge to map out_amount to each pair based on origin cell
+pair_cell_gdf = pair_cell_gdf.merge(out_subset, on=['cell_id', 'subzone_id'], how='left')
+pair_cell_gdf['in_amount'] = pair_cell_gdf['out_amount'].fillna(0) * pair_cell_gdf['in_prob']
+
+# Final grouping to ensure unique pairs (optional but safe)
+pair_cell_gdf = pair_cell_gdf.groupby(['cell_id', 'subzone_id', 'neighbor_id', 'neighbor_subzone_id'], as_index=False)['in_amount'].sum()
+pair_cell_gdf.to_csv("categorized_cell_pairs_radiation_pair_amount.csv", index=False)

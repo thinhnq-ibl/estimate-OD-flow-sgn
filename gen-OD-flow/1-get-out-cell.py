@@ -3,17 +3,13 @@ import pandas as pd
 gdf = gpd.read_file('../subzone-cell/detail_pois_district.geojson').reset_index()
 out_data = pd.read_csv('../gen-cell-flow-for-test/only_cell_out.csv')
 
-# Vectorized fast mapping instead of O(N^2) inner loop filter
-out_amount_dict = out_data.set_index('origin_cell_id')['flow_count'].to_dict()
-result = []
-for _, row in out_data.iterrows():
-    # distribute flow to cell by intersection area
-    list_cell = gdf[gdf['cell_id'] == row['origin_cell_id']]
-    total_intersection_area = list_cell['intersection_area'].sum()
-    for _, cell_row in list_cell.iterrows():
-        cell_row['out_amount'] = cell_row['intersection_area'] / total_intersection_area * row['flow_count']
-        result.append(cell_row)
+# Vectorized fast merge instead of slow iterative loop
+result_gdf = gdf.merge(out_data[['origin_cell_id', 'origin_subzone_id', 'flow_count']], 
+                       left_on=['cell_id', 'SUBZONE_C'], 
+                       right_on=['origin_cell_id', 'origin_subzone_id'], 
+                       how='inner')
 
-# save gdf to csv
-result_gdf = gpd.GeoDataFrame(result)
+# Rename flow_count to out_amount and clean up merged keys
+result_gdf.rename(columns={'flow_count': 'out_amount'}, inplace=True)
+result_gdf.drop(columns=['origin_cell_id', 'origin_subzone_id'], inplace=True)
 result_gdf.to_file("final_summed_out_cells.geojson", driver='GeoJSON')
