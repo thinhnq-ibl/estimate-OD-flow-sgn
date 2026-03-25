@@ -20,5 +20,8 @@ gdf.drop(columns=['COUNT'], inplace=True)
 
 # 5. Sort inplace and save the updated data to a new file
 gdf.sort_values(['ORIGIN_SUBZONE', 'DESTINATION_SUBZONE'], inplace=True)
+# rename ORIGIN_SUBZONE and DESTINATION_SUBZONE to subzone_id and neighbor_subzone_id for consistency with the generated data
+gdf.rename(columns={'ORIGIN_SUBZONE': 'subzone_id', 'DESTINATION_SUBZONE': 'neighbor_subzone_id'}, inplace=True)
+gdf = gdf[['subzone_id', 'neighbor_subzone_id', 'norm_total_in']]
 
 gdf.to_csv('normalized_real_flow.csv', index=False)

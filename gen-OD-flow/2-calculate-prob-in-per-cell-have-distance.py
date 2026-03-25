@@ -16,7 +16,7 @@ district_map = pd.read_csv(os.path.join(base_dir, '../map/district_zone.csv'))
 out_data = out_data.merge(district_map, left_on='SUBZONE_C', right_on='zone_id', how='left')
 out_data['district'] = out_data['district_id'].fillna(-1, inplace=True)  # Handle cells without a district mapping
 
-print(out_data.head())
+# print(out_data.head())
 
 def calculate_origin_mass(row):
     # ORIGIN MASS: Động lực sinh ra chuyến đi là DÂN SỐ (Population)
@@ -34,13 +34,15 @@ def calculate_dest_mass(row):
     amenity = float(row.get("amenity", 0))
     tourism = float(row.get("tourism", 0))
     leisure = float(row.get("leisure", 0))
-
-    pop_count = float(row.get("population", 0))
-    
+    list_poi = [office, transport, shop, amenity, tourism, leisure]
+    # matrix weight
+    weights = [20,15,12,1,10,1]
     # ALIGN WEIGHTS WITH GROUND TRUTH GENERATION (1-get-cpc-cell-out.py)
     # the same weights used in the GT generation should be used here to maintain consistency in the "mass" concept for the radiation model
-    weighted_sum = (office * 1) + (transport * 1) + (shop * 1) + (amenity * 1.0) + (tourism * 1.0) + (leisure * 1.0)
-    return weighted_sum + np.log1p(pop_count) +  1.0
+    result = [a * b for a, b in zip(list_poi, weights)]
+    weighted_sum = sum(result)
+    
+    return weighted_sum +  1.0
 
 # Calculate masses for ALL cells to ensure global lookup coverage
 out_data['origin_mass'] = out_data.apply(calculate_dest_mass, axis=1)
@@ -97,7 +99,7 @@ for index, row in out_data.iterrows():
     
     xi = origin_lookup.get(subzone_id, 0)
 
-    print(xi)
+    # print(xi)
     
     # Skip if cell missing probabilities
     if subzone_id not in prob_lookup:
@@ -111,7 +113,7 @@ for index, row in out_data.iterrows():
     # ⚡ [TỐI ƯU SIÊU NHANH] Use groupby object instead of filtering df
     try:
         cell_neighbors = pair_grouped.get_group(subzone_id).copy()  # Get neighbors for this origin cell
-        print(f"Processing cell {subzone_id} with {len(cell_neighbors)} neighbors...")
+        # print(f"Processing cell {subzone_id} with {len(cell_neighbors)} neighbors...")
     except KeyError:
         print(f"No neighbors found for cell {subzone_id}")
         cell_neighbors = pd.DataFrame()

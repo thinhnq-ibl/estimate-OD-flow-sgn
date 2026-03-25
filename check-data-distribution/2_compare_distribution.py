@@ -59,8 +59,6 @@ gt_agg = gt_df.groupby(['district_id', 'district_name', 'category'])['COUNT'].su
 # Normalize within each district
 gt_agg['total_district_trips'] = gt_agg.groupby('district_id')['COUNT'].transform('sum')
 gt_agg['p_gt'] = gt_agg['COUNT'] / gt_agg['total_district_trips']
-gt_agg.to_csv(os.path.join(base_dir, 'gt_with_distance.csv'), index=False)
-
 
 print("\n2. Loading Facebook Data...")
 fb_df = pd.read_csv(fb_file)
