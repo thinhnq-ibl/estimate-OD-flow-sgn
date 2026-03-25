@@ -218,3 +218,4 @@ cache/*
 *.cpg
 *.qmd
 share_data/cache/*
+zone/cache/*

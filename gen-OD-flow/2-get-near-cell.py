@@ -7,11 +7,11 @@ import os
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
 # ORIGINS: Only cells that actually have trips leaving (active origins)
-gdf_origin = gpd.read_file(os.path.join(base_dir, 'final_summed_out_cells.geojson')).reset_index()
+gdf_origin = gpd.read_file(os.path.join(base_dir, '../zone/detail_pois.geojson')).reset_index()
 gdf_origin = gdf_origin.to_crs(epsg=3414) # Singapore SVY21
 
 # DESTINATIONS: ALL cells in the grid, so we don't miss pure destination cells (e.g. industrial areas with 0 pop)
-gdf_dest = gpd.read_file(os.path.join(base_dir, '../subzone-cell/detail_pois_district.geojson')).reset_index()
+gdf_dest = gpd.read_file(os.path.join(base_dir, '../zone/detail_pois.geojson')).reset_index()
 gdf_dest = gdf_dest.to_crs(epsg=3414)
 
 # 2. Define thresholds in meters
@@ -38,9 +38,7 @@ for index, row in gdf_origin.iterrows():
         
         # Create a dataframe for this batch
         batch_df = pd.DataFrame({
-            "cell_id": row["cell_id"],
             "subzone_id": row["SUBZONE_C"],
-            "neighbor_id": valid_dests["cell_id"].values,
             "neighbor_subzone_id": valid_dests["SUBZONE_C"].values,
             "distance_m": valid_dists.values
         })
