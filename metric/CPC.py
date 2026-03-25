@@ -130,7 +130,7 @@ def evaluate_model(df_obs, df_pred, model_name):
     except Exception as e:
         print("Không thể phân tích theo khoảng cách:", e)
 
-    return {"Model": model_name, "R2": r2, "RMSE": rmse, "CPC": cpc}, y_true, y_pred
+    return {"Model": model_name, "R2": r2, "RMSE": rmse, "CPC": cpc}
 # Example Usage:
 
 # cpc_score = fast_cpc(gpd_real, gpd_simulate)
