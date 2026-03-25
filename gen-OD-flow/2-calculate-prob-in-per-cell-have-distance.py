@@ -12,6 +12,18 @@ out_data = gpd.read_file(os.path.join(base_dir, "../zone/pop_grid.geojson"))
 pair_cell_gdf = pd.read_csv(os.path.join(base_dir, "categorized_cell_pairs.csv"))
 district_map = pd.read_csv(os.path.join(base_dir, '../map/district_zone.csv'))
 
+# CONFIGURATION: POI WEIGHTS
+# Tuning these weights is critical for improving CPC.
+# Suggestion: Use an optimization algorithm to find the best weights that match Ground Truth flow.
+POI_WEIGHTS = {
+    'office': 20,
+    'public_transport': 15,
+    'shop': 12,
+    'amenity': 5,
+    'tourism': 10,
+    'leisure': 3
+}
+
 #map cell to district for probability lookup
 out_data = out_data.merge(district_map, left_on='SUBZONE_C', right_on='zone_id', how='left')
 out_data['district'] = out_data['district_id'].fillna(-1, inplace=True)  # Handle cells without a district mapping
@@ -24,29 +36,24 @@ def calculate_origin_mass(row):
     pop_count = float(row.get("population", 0))
     # Cộng 1 để tránh log(0) hoặc chia cho 0
     # r
-    return pop_count + 1.0
-
-def calculate_dest_mass(row):
-    # DESTINATION MASS: Động lực hút chuyến đi là POI (Văn phòng, Trường học, Trạm xe)
-    office = float(row.get("office", 0))
-    transport = float(row.get("public_transport", 0))
-    shop = float(row.get("shop", 0))
-    amenity = float(row.get("amenity", 0))
-    tourism = float(row.get("tourism", 0))
-    leisure = float(row.get("leisure", 0))
-    list_poi = [office, transport, shop, amenity, tourism, leisure]
-    # matrix weight
-    weights = [20,15,12,1,10,1]
-    # ALIGN WEIGHTS WITH GROUND TRUTH GENERATION (1-get-cpc-cell-out.py)
-    # the same weights used in the GT generation should be used here to maintain consistency in the "mass" concept for the radiation model
-    result = [a * b for a, b in zip(list_poi, weights)]
-    weighted_sum = sum(result)
-    
-    return weighted_sum +  1.0
+    return pop_count/100000 + 1.0
 
 # Calculate masses for ALL cells to ensure global lookup coverage
-out_data['origin_mass'] = out_data.apply(calculate_dest_mass, axis=1)
-out_data['dest_mass'] = out_data.apply(calculate_dest_mass, axis=1)
+# VECTORIZED OPTIMIZATION: Replaced .apply() with vectorized operations for speed
+out_data['origin_mass'] = out_data['population'].fillna(0) + 1.0
+
+# Calculate Destination Mass using vectorized weighted sum
+# Initialize with 1.0 base mass
+out_data['dest_mass'] = 1.0 
+for col, weight in POI_WEIGHTS.items():
+    if col in out_data.columns:
+        out_data['dest_mass'] += out_data[col].fillna(0) * weight
+    else:
+        print(f"Warning: Column {col} not found in data, assuming 0.")
+
+# nomalize masses to prevent overflow in radiation formula
+# out_data['origin_mass'] = out_data['origin_mass'] / out_data['origin_mass'].max()
+# out_data['dest_mass'] = out_data['dest_mass'] / out_data['dest_mass'].max()
 
 # Fix Lookup: Sử dụng cell_id đơn nhất làm key để map() hoạt động chính xác
 unique_cells = out_data.drop_duplicates(subset=['SUBZONE_C']).copy()
@@ -54,6 +61,9 @@ origin_lookup = unique_cells.set_index('SUBZONE_C')['origin_mass'].to_dict()
 dest_lookup = unique_cells.set_index('SUBZONE_C')['dest_mass'].to_dict()
 
 prob_data = pd.read_csv(os.path.join(base_dir, "../check-data-distribution/gt_prob.csv"))
+
+# Clean category column once to ensure consistent lookup
+prob_data['clean_category'] = prob_data['category'].astype(str).str.replace(' ', '')
 
 district_prob_lookup = {}
 for district, group in prob_data.groupby('district_id'):
@@ -64,8 +74,8 @@ for district, group in prob_data.groupby('district_id'):
         p0 = 0.0
         
     try:
-        # Match '(0, 10)' or '(0,10)' via stripped strings to be safe
-        p10 = float(group[group['category'].str.replace(' ', '') == '(0,10)']['p_gt'].iloc[0])
+        # Match '(0,10)' via stripped strings
+        p10 = float(group[group['clean_category'] == '(0,10)']['p_gt'].iloc[0])
     except IndexError:
         print(f"No p10 found for district {district}")
         p10 = 0.0
