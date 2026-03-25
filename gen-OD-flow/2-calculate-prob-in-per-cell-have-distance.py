@@ -16,12 +16,12 @@ district_map = pd.read_csv(os.path.join(base_dir, '../map/district_zone.csv'))
 # Tuning these weights is critical for improving CPC.
 # Suggestion: Use an optimization algorithm to find the best weights that match Ground Truth flow.
 POI_WEIGHTS = {
-    'office': 20,
-    'public_transport': 15,
+    'office': 15,
+    'public_transport': 100,
     'shop': 12,
-    'amenity': 5,
-    'tourism': 10,
-    'leisure': 3
+    'amenity': 7,
+    'tourism': 5,
+    'leisure': 2
 }
 
 #map cell to district for probability lookup
@@ -36,11 +36,11 @@ def calculate_origin_mass(row):
     pop_count = float(row.get("population", 0))
     # Cộng 1 để tránh log(0) hoặc chia cho 0
     # r
-    return pop_count/100000 + 1.0
+    return pop_count + 1
 
 # Calculate masses for ALL cells to ensure global lookup coverage
 # VECTORIZED OPTIMIZATION: Replaced .apply() with vectorized operations for speed
-out_data['origin_mass'] = out_data['population'].fillna(0) + 1.0
+out_data['origin_mass'] = out_data.apply(calculate_origin_mass, axis=1)
 
 # Calculate Destination Mass using vectorized weighted sum
 # Initialize with 1.0 base mass
