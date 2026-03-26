@@ -50,7 +50,7 @@ origin_lookup = unique_cells.set_index('SUBZONE_C')['origin_mass'].to_dict()
 dest_lookup = unique_cells.set_index('SUBZONE_C')['dest_mass'].to_dict()
 
 district_prob_lookup = {}
-ob = 1
+ob = 0
 if ob == 1:
     prob_data = pd.read_csv(os.path.join(base_dir, "../check-data-distribution/gt_prob.csv"))
 
@@ -94,7 +94,6 @@ else:
             p10 = 0.0
             
         district_prob_lookup[district] = {'prob_0': p0, 'prob_10': p10}
-
 
 prob_lookup = {}
 for _, row in out_data.iterrows():

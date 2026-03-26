@@ -34,105 +34,47 @@ gpd_simulate = pd.read_csv(gpd_simulate_path)
 gpd_real['norm_total_in'] = pd.to_numeric(gpd_real['norm_total_in'], errors='coerce').fillna(0)
 gpd_simulate['norm_total_in'] = pd.to_numeric(gpd_simulate['norm_total_in'], errors='coerce').fillna(0)
 
-# def fast_cpc(df_obs, df_pred):
-#     """
-#     High-performance CPC calculation for large datasets.
-#     """
-#     # Ensure in_amount columns are numeric
-#     df_obs = df_obs.copy()
-#     df_pred = df_pred.copy()
-#     df_obs['norm_total_in'] = pd.to_numeric(df_obs['norm_total_in'], errors='coerce')
-#     df_pred['norm_total_in'] = pd.to_numeric(df_pred['norm_total_in'], errors='coerce')
 
-#     # 1. Use an inner merge to find the intersection of flows
-#     merged = pd.merge(
-#         df_obs[['cell_id', 'neighbor_id', 'norm_total_in']], 
-#         df_pred[['cell_id', 'neighbor_id', 'norm_total_in']], 
-#         on=['cell_id', 'neighbor_id'], 
-#         suffixes=('_obs', '_pred')
-#     )
-#     # 2. Convert columns to NumPy arrays (zero-copy view if possible)
-#     obs_flows = merged['norm_total_in_obs'].values.astype(float)
-#     pred_flows = merged['norm_total_in_pred'].values.astype(float)
-
-#     # 3. Vectorized minimum and sums
-#     intersection_sum = np.minimum(obs_flows, pred_flows).sum()
-
-#     # Calculate totals from the original dataframes to account for flows that might exist in one but not the other
-#     total_obs = df_obs['norm_total_in'].sum()
-#     total_pred = df_pred['norm_total_in'].sum()
-
-#     # 4. Final CPC ratio
-#     cpc = (2.0 * intersection_sum) / (total_obs + total_pred) if (total_obs + total_pred) != 0 else 0.0
-#     return cpc
-
-def evaluate_model(df_obs, df_pred, model_name):
-    """
-    Aligns data via an outer merge (to penalize flows predicted where none exist, 
-    and vice versa) and calculates R2, RMSE, and CPC.
-    """
-    # Ensure numeric types
-    df_obs['norm_total_in'] = pd.to_numeric(df_obs['norm_total_in'], errors='coerce').fillna(0)
-    df_pred['norm_total_in'] = pd.to_numeric(df_pred['norm_total_in'], errors='coerce').fillna(0)
-
-    # Aggregate duplicates by grouping cell_id and neighbor_id strictly to prevent cartesian explosion
-    df_obs = df_obs.groupby(['subzone_id', 'neighbor_subzone_id'], as_index=False)['norm_total_in'].sum()
-    df_pred = df_pred.groupby(['subzone_id', 'neighbor_subzone_id'], as_index=False)['norm_total_in'].sum()
-
-    # Outer merge to align the 95,000 cell pairs correctly
-    merged = pd.merge(
-        df_obs[['subzone_id', 'neighbor_subzone_id', 'norm_total_in']], 
-        df_pred[['subzone_id', 'neighbor_subzone_id', 'norm_total_in']], 
-        on=['subzone_id', 'neighbor_subzone_id'], 
-        how='outer',
-        suffixes=('_obs', '_pred')
-    ).fillna(0) # Fill missing flows with 0
-
-    # merged['distance'] = np.sqrt((merged['x_obs'] - merged['x_pred'])**2 + (merged['y_obs'] - merged['y_pred'])**2)
-    high_error_phantom = merged[(merged['norm_total_in_obs'] == 0) & (merged['norm_total_in_pred'] > 1000)]
-    print(high_error_phantom)
+def evaluate_model_refined(df_obs, df_pred, model_name):
+    # 1. Pre-process and Aggregate
+    for df in [df_obs, df_pred]:
+        df['norm_total_in'] = pd.to_numeric(df['norm_total_in'], errors='coerce').fillna(0)
     
+    # Aggregate to ensure unique pairs
+    obs_agg = df_obs.groupby(['subzone_id', 'neighbor_subzone_id'])['norm_total_in'].sum().reset_index()
+    pred_agg = df_pred.groupby(['subzone_id', 'neighbor_subzone_id'])['norm_total_in'].sum().reset_index()
+
+    # 2. Align via Outer Merge
+    merged = pd.merge(
+        obs_agg, pred_agg, 
+        on=['subzone_id', 'neighbor_subzone_id'], 
+        how='outer', 
+        suffixes=('_obs', '_pred')
+    ).fillna(0)
+
     y_true = merged['norm_total_in_obs'].values
     y_pred = merged['norm_total_in_pred'].values
-    
-    # Totals for CPC (use original dfs to preserve sum of all flows)
-    total_obs = df_obs['norm_total_in'].sum()
-    total_pred = df_pred['norm_total_in'].sum()
 
-    # Calculate Metrics
+    # 3. Core Metrics
     r2 = r2_score(y_true, y_pred)
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-
-    # compute CPC directly from the aligned arrays to avoid mismatched signatures
+    
+    # CPC Calculation
     intersection = np.minimum(y_true, y_pred).sum()
-    cpc = (2.0 * intersection) / (total_obs + total_pred) if (total_obs + total_pred) != 0 else 0.0
-    
-    merged['error'] = abs(merged['norm_total_in_obs'] - merged['norm_total_in_pred'])
-    print("Top 10 cặp dự đoán lệch nặng nhất:")
-    print(merged.sort_values('error', ascending=False).head(10))
-    
-    try:
-        pair_df = pd.read_csv(os.path.join(base_dir, "..", "gen-OD-flow", "categorized_cell_pairs.csv"), usecols=['category', 'distance_m', 'subzone_id', 'neighbor_subzone_id'])
-        merged_dist = merged.merge(pair_df[['subzone_id', 'neighbor_subzone_id', 'category']], on=['subzone_id', 'neighbor_subzone_id'], how='left')
-        print("\n\n--- PHÂN TÍCH SAI LỆCH THEO VÀNH ĐAI KHOẢNG CÁCH (CATEGORY) ---")
-        stats = []
-        for cat, group in merged_dist.groupby('category'):
-            mae = group['error'].mean()
-            sum_err = group['error'].sum()
-            obs_sum = group['norm_total_in_obs'].sum()
-            pred_sum = group['norm_total_in_pred'].sum()
-            cpc_cat = 2 * group[['norm_total_in_obs', 'norm_total_in_pred']].min(axis=1).sum() / (obs_sum + pred_sum) if (obs_sum + pred_sum) > 0 else 0
-            stats.append({'Category': cat, 'Count': len(group), 'MAE (Error TB)': mae, 'Tổng Error': sum_err, 'Tổng Obs': obs_sum, 'Tổng Pred': pred_sum, 'Nội bộ CPC': cpc_cat})
-        
-        stats_df = pd.DataFrame(stats).sort_values('Category')
-        print(stats_df.to_string(index=False))
-        print("\n")
-    except Exception as e:
-        print("Không thể phân tích theo khoảng cách:", e)
+    total_sum = y_true.sum() + y_pred.sum()
+    cpc = (2.0 * intersection) / total_sum if total_sum > 0 else 0.0
 
-    return {"Model": model_name, "R2": r2, "RMSE": rmse, "CPC": cpc}
-# Example Usage:
+    # 4. Error Analysis
+    merged['abs_error'] = np.abs(y_true - y_pred)
+    
+    # Print summary
+    print(f"--- Results for {model_name} ---")
+    print(f"R2 Score:  {r2:.4f}")
+    print(f"RMSE:      {rmse:.4f}")
+    print(f"CPC:       {cpc:.4f}")
+    
+    return merged, {"R2": r2, "RMSE": rmse, "CPC": cpc}
 
 # cpc_score = fast_cpc(gpd_real, gpd_simulate)
-scores = evaluate_model(gpd_real, gpd_simulate, "GEOGloWS")
+scores = evaluate_model_refined(gpd_real, gpd_simulate, "GEOGloWS")
 print(f"CPC Score: {scores}")
